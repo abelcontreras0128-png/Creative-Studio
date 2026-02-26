@@ -4,38 +4,7 @@ import json
 import os
 
 # --- APP CONFIG ---
-st.set_page_config(page_title="Studio Planner v2.6", layout="wide")
-
-# CUSTOM CSS: Dark Mode original aesthetic
-st.markdown("""
-<style>
-    .stApp { background-color: #0e1117; color: #ffffff; }
-    
-    /* Sleek Day Tile Styling */
-    .day-container {
-        border-radius: 10px;
-        padding: 10px;
-        text-align: center;
-        border: 1px solid rgba(255,255,255,0.1);
-        margin-bottom: 5px;
-        min-height: 85px;
-        transition: transform 0.2s;
-    }
-    .day-container:hover { transform: translateY(-3px); cursor: pointer; }
-    
-    .label-text { font-size: 0.7rem; opacity: 0.7; margin-bottom: 2px; }
-    .num-text { font-size: 1.3rem; font-weight: bold; margin-bottom: 2px; }
-    .month-text { font-size: 0.6rem; opacity: 0.6; text-transform: uppercase; }
-
-    /* Task Box Styling */
-    .task-card {
-        background: rgba(255, 255, 255, 0.03);
-        padding: 15px;
-        border-radius: 12px;
-        border: 1px solid rgba(255,255,255,0.1);
-    }
-</style>
-""", unsafe_allow_html=True)
+st.set_page_config(page_title="Studio Planner v2.7", layout="wide")
 
 # --- DATA HANDLING ---
 DATA_FILE = "studio_data.json"
@@ -52,6 +21,48 @@ if "daily_plans" not in data: data["daily_plans"] = {}
 
 def save():
     with open(DATA_FILE, "w") as f: json.dump(data, f)
+
+# --- CUSTOM CSS FOR UNIFORMITY ---
+st.markdown("""
+<style>
+    .stApp { background-color: #0e1117; color: #ffffff; }
+    
+    /* Grid Container: Fixed 10 columns for desktop, wraps for mobile */
+    .planner-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+        gap: 8px;
+        margin-bottom: 30px;
+    }
+
+    /* Uniform Square Tile */
+    .day-tile {
+        aspect-ratio: 1 / 1;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        border: 1px solid rgba(255,255,255,0.1);
+        text-decoration: none;
+        transition: transform 0.1s, box-shadow 0.2s;
+        cursor: pointer;
+    }
+    
+    .day-tile:hover { transform: scale(1.05); }
+
+    .t-day { font-size: 0.65rem; opacity: 0.8; text-transform: uppercase; }
+    .t-num { font-size: 1.2rem; font-weight: bold; margin: 2px 0; }
+    .t-mon { font-size: 0.6rem; opacity: 0.6; }
+
+    .task-area {
+        background: rgba(255, 255, 255, 0.03);
+        padding: 20px;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+</style>
+""", unsafe_allow_html=True)
 
 # --- SIDEBAR ---
 with st.sidebar:
@@ -73,7 +84,7 @@ with st.sidebar:
 # --- MAIN UI ---
 st.title("60-Day Commitment Tracker")
 
-def get_color_logic(date_str):
+def get_day_style(date_str):
     plan = data["daily_plans"].get(date_str, [])
     if not plan: return "rgba(255,255,255,0.05)", "none", "white"
     
@@ -81,47 +92,60 @@ def get_color_logic(date_str):
     done = sum(1 for t in plan if t.get("done", False))
     percent = (done / total) * 100 if total > 0 else 0
     
-    # 5-Stage Color Spectrum (Matte/Deep for visibility)
     glow = "none"
-    if percent == 0: color = "#8b0000"      # Matte Red
-    elif percent <= 25: color = "#a65d00"   # Matte Orange
-    elif percent <= 50: color = "#9a8c00"   # Matte Yellow
-    elif percent <= 75: color = "#006400"   # Matte Green
+    if percent == 0: color = "#8b0000"
+    elif percent <= 25: color = "#a65d00"
+    elif percent <= 50: color = "#9a8c00"
+    elif percent <= 75: color = "#006400"
     else: 
-        color = "#00f3ff"                   # Neon Blue
-        glow = "0 0 15px rgba(0, 243, 255, 0.7)"
+        color = "#00f3ff"
+        glow = "0 0 15px rgba(0, 243, 255, 0.6)"
     
-    # Text is black for lighter colors (Yellow/Green) for contrast
     text_c = "black" if (25 < percent < 80) else "white"
     return color, glow, text_c
 
-# GRID DISPLAY
+# RENDER GRID
 today = datetime.now().date()
-cols = st.columns(10) 
+cols = st.columns(10) # Using columns for click-capture
 for i in range(60):
     day = today + timedelta(days=i)
     d_str = day.strftime("%Y-%m-%d")
-    bg, glow, txt = get_color_logic(d_str)
+    bg, glow, txt = get_day_style(d_str)
     
     with cols[i % 10]:
-        # Using a clickable button that contains the styled HTML
-        if st.button(f"{day.strftime('%a')}\n{day.day}\n{day.strftime('%b')}", 
-                     key=f"btn_{d_str}", 
-                     use_container_width=True,
-                     help=f"Plan for {d_str}"):
+        # The Tile UI
+        st.markdown(f"""
+            <div style="
+                background-color: {bg};
+                box-shadow: {glow};
+                color: {txt};
+                aspect-ratio: 1/1;
+                border-radius: 8px;
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                align-items: center;
+                border: 1px solid rgba(255,255,255,0.1);
+                margin-bottom: 10px;
+                pointer-events: none;
+            ">
+                <div class="t-day">{day.strftime('%a')}</div>
+                <div class="t-num">{day.day}</div>
+                <div class="t-mon">{day.strftime('%b')}</div>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        # Transparent button on top for clicking
+        if st.button("view", key=f"sel_{d_str}", use_container_width=True):
             st.session_state.selected_date = d_str
         
-        # Injecting the color styling directly via CSS selector
+        # Style the tiny 'view' button to be nearly invisible but functional
         st.markdown(f"""
             <style>
-                div.stButton > button[key="btn_{d_str}"] {{
-                    background-color: {bg} !important;
-                    box-shadow: {glow} !important;
-                    color: {txt} !important;
-                    white-space: pre-wrap !important;
-                    border: 1px solid rgba(255,255,255,0.1) !important;
-                    font-size: 0.8rem !important;
-                    font-weight: bold !important;
+                div.stButton > button[key="sel_{d_str}"] {{
+                    margin-top: -45px;
+                    height: 40px;
+                    opacity: 0;
                 }}
             </style>
         """, unsafe_allow_html=True)
@@ -138,10 +162,10 @@ st.subheader(f"Schedule for {datetime.strptime(sel_date, '%Y-%m-%d').strftime('%
 c_list, c_add = st.columns([1.5, 1])
 
 with c_list:
-    st.markdown('<div class="task-card">', unsafe_allow_html=True)
+    st.markdown('<div class="task-area">', unsafe_allow_html=True)
     tasks = data["daily_plans"].get(sel_date, [])
     if not tasks:
-        st.info("No tasks planned. Use the 'Quick Add' on the right.")
+        st.info("No tasks yet.")
     else:
         for i, t in enumerate(tasks):
             col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
