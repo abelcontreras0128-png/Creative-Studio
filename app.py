@@ -5,7 +5,7 @@ import json
 import os
 
 # --- APP CONFIG ---
-st.set_page_config(page_title="Forward Planner", layout="wide")
+st.set_page_config(page_title="Creative Studio v2.1", layout="wide")
 
 # --- DATA HANDLING ---
 DATA_FILE = "studio_data.json"
@@ -13,12 +13,15 @@ DATA_FILE = "studio_data.json"
 def load_data():
     if os.path.exists(DATA_FILE):
         with open(DATA_FILE, "r") as f:
-            return json.load(f)
+            try:
+                return json.load(f)
+            except:
+                return {"projects": [], "daily_plans": {}}
     return {"projects": [], "daily_plans": {}}
 
 data = load_data()
 
-# Initialize empty keys if they don't exist
+# Ensure keys exist
 if "projects" not in data: data["projects"] = []
 if "daily_plans" not in data: data["daily_plans"] = {}
 
@@ -26,76 +29,70 @@ def save():
     with open(DATA_FILE, "w") as f:
         json.dump(data, f)
 
-# --- SIDEBAR: ADVANCED PROJECT BOARD ---
-st.sidebar.title("📁 Project Board")
+# --- SIDEBAR: TOOLS ---
+st.sidebar.title("🛠️ Tools & Projects")
 
-# 1. Add/Edit Projects
-with st.sidebar.expander("✨ Manage Projects"):
-    # Adding
-    st.write("---")
-    new_name = st.text_input("New Project Name")
-    new_format = st.text_input("Custom Format (e.g. Script, Book)")
-    if st.button("Add"):
-        data["projects"].append({"name": new_name, "format": new_format, "status": "Parked", "stage": "Concept"})
+# 1. MASS ADD TASKS (NEW FEATURE)
+with st.sidebar.expander("🪄 Mass-Add Task Templates"):
+    st.write("Apply a task to multiple days at once.")
+    mass_task_name = st.text_input("Task Description", key="mass_t_input")
+    date_range = st.date_input("Select Date Range", value=[datetime.now(), datetime.now() + timedelta(days=4)])
+    
+    if st.button("Apply to All Dates"):
+        if len(date_range) == 2:
+            start_date, end_date = date_range
+            curr = start_date
+            while curr <= end_date:
+                d_str = curr.strftime("%Y-%m-%d")
+                if d_str not in data["daily_plans"]:
+                    data["daily_plans"][d_str] = []
+                # Avoid duplicates
+                if not any(t['name'] == mass_task_name for t in data["daily_plans"][d_str]):
+                    data["daily_plans"][d_str].append({"name": mass_task_name, "done": False})
+                curr += timedelta(days=1)
+            save()
+            st.success(f"Added to { (end_date - start_date).days + 1 } days!")
+            st.rerun()
+
+# 2. PROJECT BOARD
+with st.sidebar.expander("📁 Project Board"):
+    new_name = st.text_input("Project Name")
+    new_format = st.text_input("Custom Format")
+    if st.button("Add Project"):
+        data["projects"].append({"name": new_name, "format": new_format, "status": "Parked"})
         save()
         st.rerun()
     
-    # Editing existing
     st.write("---")
-    st.write("Edit Existing:")
     for i, p in enumerate(data["projects"]):
         with st.expander(f"Edit: {p['name']}"):
             p['name'] = st.text_input("Rename", value=p['name'], key=f"ren_{i}")
-            p['format'] = st.text_input("Format", value=p['format'], key=f"form_{i}")
-            if st.button("Delete Project", key=f"del_{i}"):
+            p['status'] = st.selectbox("Status", ["Active", "Parked"], index=0 if p['status']=="Active" else 1, key=f"stat_{i}")
+            if st.button("Delete", key=f"del_{i}"):
                 data["projects"].pop(i)
                 save()
                 st.rerun()
 
-# 2. Status Toggles
-st.sidebar.subheader("Active (Max 3)")
-active_p = [p for p in data["projects"] if p["status"] == "Active"]
-for p in active_p:
-    col1, col2 = st.sidebar.columns([3, 1])
-    col1.write(f"**{p['name']}**")
-    if col2.button("🅿️", key=f"park_{p['name']}"):
-        p["status"] = "Parked"
-        save()
-        st.rerun()
-
-st.sidebar.subheader("Parked Projects")
-for p in [p for p in data["projects"] if p["status"] == "Parked"]:
-    col1, col2 = st.sidebar.columns([3, 1])
-    col1.write(p["name"])
-    if col2.button("✅", key=f"act_{p['name']}"):
-        if len(active_p) < 3:
-            p["status"] = "Active"
-            save()
-            st.rerun()
-
 # --- MAIN UI ---
 st.title("📅 60-Day Forward Planner")
 
-# 1. THE FORWARD GRID
-today = datetime.now().date()
-st.subheader("Upcoming 60 Days")
-
-# Color Logic Function
+# GRID LOGIC
 def get_color(date_str):
     plan = data["daily_plans"].get(date_str, [])
     if not plan: return "gray"
     
     total = len(plan)
     done = sum(1 for t in plan if t.get("done", False))
-    
+    today_obj = datetime.now().date()
     date_obj = datetime.strptime(date_str, "%Y-%m-%d").date()
     
-    if done == total and total > 0: return "green"
+    if total > 0 and done == total: return "green"
     if done > 0: return "orange"
-    if date_obj < today and done == 0: return "red"
-    return "#333" # Planned but not yet reached
+    if date_obj < today_obj and done == 0: return "red"
+    return "#444" # Planned/Future
 
-# Display Grid
+# GRID DISPLAY
+today = datetime.now().date()
 cols = st.columns(10)
 for i in range(60):
     day = today + timedelta(days=i)
@@ -103,21 +100,26 @@ for i in range(60):
     bg = get_color(d_str)
     
     with cols[i % 10]:
-        if st.button(f"{day.month}/{day.day}", key=f"btn_{d_str}", use_container_width=True):
+        # Visual square button
+        if st.button(f"{day.month}/{day.day}", key=f"btn_{d_str}", use_container_width=True, help=f"Status for {d_str}"):
             st.session_state.selected_date = d_str
+        # Small colored indicator line under button
+        st.markdown(f"<div style='height:5px; background-color:{bg}; margin-top:-10px; border-radius:2px;'></div>", unsafe_allow_html=True)
 
 st.divider()
 
-# 2. DAY INSPECTOR (The "Click a Day" feature)
+# DAY VIEW
 if "selected_date" not in st.session_state:
     st.session_state.selected_date = today.strftime("%Y-%m-%d")
 
 sel_date = st.session_state.selected_date
 st.header(f"Day View: {sel_date}")
 
-# Add Tasks to the Day
-with st.expander("➕ Add Task to this Day"):
-    t_name = st.text_input("Task Description")
+col_left, col_right = st.columns([1, 1])
+
+with col_left:
+    st.subheader("Add Specific Task")
+    t_name = st.text_input("Single Task Name", key="single_t")
     if st.button("Add Task"):
         if sel_date not in data["daily_plans"]:
             data["daily_plans"][sel_date] = []
@@ -125,23 +127,25 @@ with st.expander("➕ Add Task to this Day"):
         save()
         st.rerun()
 
-# Show Tasks for Selected Day
-day_tasks = data["daily_plans"].get(sel_date, [])
-if not day_tasks:
-    st.info("No tasks planned for this day.")
-else:
-    for i, task in enumerate(day_tasks):
-        col1, col2 = st.columns([0.1, 0.9])
-        # Using checkboxes to toggle "Done"
-        is_done = col1.checkbox("", value=task["done"], key=f"chk_{sel_date}_{i}")
-        if is_done != task["done"]:
-            task["done"] = is_done
-            save()
-            st.rerun()
-        col2.write(f"~~{task['name']}~~" if is_done else task["name"])
-        
-        # Option to delete a specific task
-        if st.button("🗑️", key=f"deltask_{i}"):
-            day_tasks.pop(i)
-            save()
-            st.rerun()
+with col_right:
+    st.subheader("Tasks for this Day")
+    day_tasks = data["daily_plans"].get(sel_date, [])
+    if not day_tasks:
+        st.info("Nothing planned.")
+    else:
+        for i, task in enumerate(day_tasks):
+            c1, c2, c3 = st.columns([0.1, 0.8, 0.1])
+            # Checkbox updates state immediately
+            check = c1.checkbox("", value=task["done"], key=f"c_{sel_date}_{i}")
+            if check != task["done"]:
+                task["done"] = check
+                save()
+                st.rerun()
+            
+            label = f"~~{task['name']}~~" if task["done"] else task["name"]
+            c2.markdown(label)
+            
+            if c3.button("🗑️", key=f"d_{sel_date}_{i}"):
+                day_tasks.pop(i)
+                save()
+                st.rerun()
