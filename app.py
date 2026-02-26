@@ -157,4 +157,6 @@ with c_add:
     st.write("### Quick Add")
     new_t = st.text_input("New Task Description", key="input_new_task")
     if st.button("Add to Today"):
-        if sel_date not in data["daily_plans"]:
+        if sel_date not in data["daily_plans"]: data["daily_plans"][sel_date] = []
+        data["daily_plans"][sel_date].append({"name": new_t, "done": False})
+        save(); st.rerun()
