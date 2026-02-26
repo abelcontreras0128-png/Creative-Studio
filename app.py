@@ -5,7 +5,7 @@ import json
 import os
 
 # --- APP CONFIG ---
-st.set_page_config(page_title="Studio Planner v2.8", layout="wide")
+st.set_page_config(page_title="Studio Planner v2.9", layout="wide")
 
 # --- DATA HANDLING ---
 DATA_FILE = "studio_data.json"
@@ -24,52 +24,41 @@ if "projects" not in data: data["projects"] = []
 def save():
     with open(DATA_FILE, "w") as f: json.dump(data, f)
 
-# --- SIDEBAR: TOOLS & PROJECTS ---
-with st.sidebar:
-    st.title("🛠️ Studio Tools")
-    
-    with st.expander("📁 Project Board"):
-        p_name = st.text_input("New Project Name")
-        if st.button("Add Project"):
-            data["projects"].append({"name": p_name, "status": "Parked"})
-            save(); st.rerun()
-        
-        st.write("---")
-        for i, p in enumerate(data["projects"]):
-            col1, col2 = st.columns([2, 1])
-            col1.write(f"**{p['name']}**")
-            p['status'] = col2.selectbox("Status", ["Active", "Parked"], index=0 if p['status']=="Active" else 1, key=f"ps_{i}")
-
-    with st.expander("🪄 Template Mass-Add"):
-        m_task = st.text_input("Task Description")
-        m_range = st.date_input("Date Range", value=[datetime.now(), datetime.now() + timedelta(days=6)])
-        if st.button("Apply Template"):
-            if len(m_range) == 2:
-                curr = m_range[0]
-                while curr <= m_range[1]:
-                    d_str = curr.strftime("%Y-%m-%d")
-                    if d_str not in data["daily_plans"]: data["daily_plans"][d_str] = []
-                    if not any(t['name'] == m_task for t in data["daily_plans"][d_str]):
-                        data["daily_plans"][d_str].append({"name": m_task, "done": False})
-                    curr += timedelta(days=1)
-                save(); st.rerun()
-
-# --- GRID LOGIC ---
+# --- SESSION STATE INITIALIZATION ---
 today = datetime.now().date()
-grid_data = []
+if "selected_date" not in st.session_state:
+    st.session_state.selected_date = today.strftime("%Y-%m-%d")
 
+# --- SIDEBAR: PROJECTS ---
+with st.sidebar:
+    st.title("📂 Project Board")
+    p_name = st.text_input("New Project Name")
+    if st.button("Add Project"):
+        data["projects"].append({"name": p_name, "status": "Parked"})
+        save(); st.rerun()
+    st.write("---")
+    for i, p in enumerate(data["projects"]):
+        with st.expander(f"Edit: {p['name']}"):
+            p['name'] = st.text_input("Rename", value=p['name'], key=f"ren_{i}")
+            p['status'] = st.selectbox("Status", ["Active", "Parked"], index=0 if p['status']=="Active" else 1, key=f"stat_{i}")
+
+# --- GRID CALCULATION ---
+grid_data = []
 for i in range(60):
     day = today + timedelta(days=i)
     d_str = day.strftime("%Y-%m-%d")
     plan = data["daily_plans"].get(d_str, [])
     
-    # Calculate Color
+    # Selection Highlight
+    is_selected = d_str == st.session_state.selected_date
+    border = "2px solid #00f3ff" if is_selected else "1px solid rgba(255,255,255,0.1)"
+    
+    # Color Logic
     if not plan:
         color, glow, text = "rgba(255,255,255,0.05)", "none", "#888"
     else:
-        total = len(plan)
         done = sum(1 for t in plan if t.get("done", False))
-        pct = (done / total) * 100
+        pct = (done / len(plan)) * 100
         glow = "none"
         if pct == 0: color = "#8b0000" # Red
         elif pct <= 25: color = "#a65d00" # Orange
@@ -78,96 +67,61 @@ for i in range(60):
         else: 
             color = "#00f3ff" # Neon Blue
             glow = "0 0 15px rgba(0, 243, 255, 0.6)"
-        text = "black" if (25 < pct < 80) else "white"
+        
+        # FIXING LEGIBILITY: Black text for bright Neon Blue or Yellow
+        text = "black" if (pct > 75 or 25 < pct < 55) else "white"
         
     grid_data.append({
-        "date": d_str,
-        "day_name": day.strftime('%a'),
-        "day_num": day.day,
-        "month": day.strftime('%b'),
-        "color": color,
-        "glow": glow,
-        "text": text
+        "date": d_str, "day_name": day.strftime('%a'), "day_num": day.day,
+        "month": day.strftime('%b'), "color": color, "glow": glow, "text": text, "border": border
     })
 
-# --- CUSTOM GRID COMPONENT ---
-# This renders the grid as one single interactive block
+# --- COMPONENT HTML (The Clickable Grid) ---
+# We use query params as a "hack" to send data from HTML back to Python instantly
 grid_html = f"""
 <style>
-    .grid {{
-        display: grid;
-        grid-template-columns: repeat(10, 1fr);
-        gap: 8px;
-        background-color: #0e1117;
-        font-family: sans-serif;
-    }}
+    .grid {{ display: grid; grid-template-columns: repeat(10, 1fr); gap: 8px; font-family: sans-serif; }}
     .tile {{
-        aspect-ratio: 1/1;
-        border-radius: 8px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        cursor: pointer;
-        border: 1px solid rgba(255,255,255,0.1);
-        transition: transform 0.1s;
+        aspect-ratio: 1/1; border-radius: 8px; display: flex; flex-direction: column;
+        justify-content: center; align-items: center; cursor: pointer; transition: 0.1s;
     }}
-    .tile:hover {{ transform: scale(1.05); border-color: white; }}
+    .tile:hover {{ transform: scale(1.03); }}
     .t-day {{ font-size: 10px; opacity: 0.8; text-transform: uppercase; }}
     .t-num {{ font-size: 18px; font-weight: bold; margin: 2px 0; }}
     .t-mon {{ font-size: 9px; opacity: 0.6; }}
 </style>
 <div class="grid">
     {''.join([f'''
-    <div class="tile" style="background-color: {d['color']}; box-shadow: {d['glow']}; color: {d['text']};" 
-         onclick="parent.postMessage({{type: 'select_date', date: '{d['date']}'}}, '*')">
+    <div class="tile" style="background-color: {d['color']}; box-shadow: {d['glow']}; color: {d['text']}; border: {d['border']};" 
+         onclick="window.parent.postMessage({{type: 'streamlit:set_query_params', params: {{selected: '{d['date']}'}}}}, '*')">
         <div class="t-day">{d['day_name']}</div>
         <div class="t-num">{d['day_num']}</div>
         <div class="t-mon">{d['month']}</div>
     </div>
     ''' for d in grid_data])}
 </div>
-
-<script>
-    // This script sends the date back to Streamlit when a tile is clicked
-    const tiles = document.querySelectorAll('.tile');
-    tiles.forEach(tile => {{
-        tile.addEventListener('click', () => {{
-            // Custom event handling for Streamlit
-        }});
-    }});
-</script>
 """
 
-# Render Title and Grid
+# Check if a click happened via query params
+q_params = st.query_params
+if "selected" in q_params and q_params["selected"] != st.session_state.selected_date:
+    st.session_state.selected_date = q_params["selected"]
+    st.rerun()
+
 st.title("60-Day Commitment Tracker")
-
-# We use a hidden input and small JS bridge to handle the "click"
-if "selected_date" not in st.session_state:
-    st.session_state.selected_date = today.strftime("%Y-%m-%d")
-
-# This is the "invisible" selection logic
-# Since Streamlit components are isolated, we use a simple selectbox as a bridge
-selected = st.selectbox("Select Date to View/Edit:", [d['date'] for d in grid_data], 
-                        index=[d['date'] for d in grid_data].index(st.session_state.selected_date))
-st.session_state.selected_date = selected
-
-# Visual Grid (Display Only in this version for stability)
-components.html(grid_html, height=550)
-
-st.divider()
+components.html(grid_html, height=520)
 
 # --- DAY VIEW ---
+st.divider()
 sel_date = st.session_state.selected_date
-st.subheader(f"Schedule for {datetime.strptime(sel_date, '%Y-%m-%d').strftime('%A, %b %d')}")
+st.subheader(f"Schedule: {datetime.strptime(sel_date, '%Y-%m-%d').strftime('%A, %b %d')}")
 
 c_list, c_add = st.columns([1.5, 1])
 
 with c_list:
-    st.markdown('<div style="background: rgba(255,255,255,0.03); padding: 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">', unsafe_allow_html=True)
     tasks = data["daily_plans"].get(sel_date, [])
     if not tasks:
-        st.info("No tasks yet.")
+        st.info("No tasks yet. Plan this day on the right.")
     else:
         for i, t in enumerate(tasks):
             col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
@@ -179,11 +133,10 @@ with c_list:
             col2.markdown(f"<div style='padding-top: 5px; font-size: 1.1rem; {t_style}'>{t['name']}</div>", unsafe_allow_html=True)
             if col3.button("🗑️", key=f"del_{sel_date}_{i}"):
                 tasks.pop(i); save(); st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
 
 with c_add:
-    st.markdown("### ➕ Quick Add")
-    new_t = st.text_input("New Task", key="new_task_field")
+    st.write("### ➕ Quick Add")
+    new_t = st.text_input("Task Name", key="new_task_field", placeholder="e.g. Finish Chapter 1")
     if st.button("Add to Day"):
         if sel_date not in data["daily_plans"]: data["daily_plans"][sel_date] = []
         data["daily_plans"][sel_date].append({"name": new_t, "done": False})
