@@ -4,27 +4,40 @@ import json
 import os
 
 # --- APP CONFIG ---
-st.set_page_config(page_title="Creative Studio v2.3", layout="wide")
+st.set_page_config(page_title="Studio Planner", layout="wide")
 
-# Custom CSS for Sleek UI and Neon Blue Accents
+# CUSTOM CSS: Dark Mode original aesthetic with Neon Accents
 st.markdown("""
 <style>
-    .stButton>button {
-        border-radius: 12px;
-        height: 70px;
-        border: 1px solid #f0f2f6;
-        background-color: #ffffff;
-        transition: all 0.3s;
+    .stApp {
+        background-color: #0e1117;
+        color: #ffffff;
     }
-    .stButton>button:hover {
-        border-color: #00f3ff;
-        box-shadow: 0 4px 15px rgba(0, 243, 255, 0.3);
+    /* Grid Container */
+    .grid-container {
+        display: grid;
+        grid-template-columns: repeat(10, 1fr);
+        gap: 10px;
+        margin-bottom: 20px;
     }
-    .day-tile {
-        border-radius: 12px;
-        padding: 15px;
+    /* Sleek Neon Tiles */
+    .tile {
+        border-radius: 8px;
+        padding: 12px 5px;
         text-align: center;
-        transition: all 0.3s;
+        border: 1px solid rgba(255,255,255,0.1);
+        background: rgba(255, 255, 255, 0.05);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .tile:hover {
+        transform: translateY(-2px);
+    }
+    /* Task Styling */
+    .task-container {
+        background: rgba(255, 255, 255, 0.03);
+        padding: 15px;
+        border-radius: 12px;
+        border: 1px solid rgba(255,255,255,0.1);
     }
 </style>
 """, unsafe_allow_html=True)
@@ -49,13 +62,13 @@ def save():
     with open(DATA_FILE, "w") as f:
         json.dump(data, f)
 
-# --- SIDEBAR TOOLS ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.title("📂 Studio Controls")
-    with st.expander("🪄 Template Mass-Add"):
-        m_task = st.text_input("Task Name")
-        m_range = st.date_input("Date Range", value=[datetime.now(), datetime.now() + timedelta(days=4)])
-        if st.button("Apply Template"):
+    st.title("🛠️ Studio")
+    with st.expander("🪄 Mass-Add Template"):
+        m_task = st.text_input("Task")
+        m_range = st.date_input("Range", value=[datetime.now(), datetime.now() + timedelta(days=6)])
+        if st.button("Apply"):
             if len(m_range) == 2:
                 curr = m_range[0]
                 while curr <= m_range[1]:
@@ -66,61 +79,55 @@ with st.sidebar:
                     curr += timedelta(days=1)
                 save(); st.rerun()
 
-    with st.expander("📝 Project Board"):
-        p_name = st.text_input("Project Name")
-        p_form = st.text_input("Format Type")
-        if st.button("Add Project"):
-            data["projects"].append({"name": p_name, "format": p_form, "status": "Parked"})
+    with st.expander("📁 Projects"):
+        p_name = st.text_input("Name")
+        if st.button("Add"):
+            data["projects"].append({"name": p_name, "status": "Parked"})
             save(); st.rerun()
         for i, p in enumerate(data["projects"]):
-            st.write(f"**{p['name']}** ({p['format']})")
-            p['status'] = st.selectbox("Status", ["Active", "Parked"], index=0 if p['status']=="Active" else 1, key=f"ps_{i}")
+            st.write(f"**{p['name']}**")
+            p['status'] = st.selectbox("State", ["Active", "Parked"], index=0 if p['status']=="Active" else 1, key=f"ps_{i}")
 
 # --- MAIN UI ---
-st.title("✨ 60-Day Digital Planner")
+st.title("60-Day Daily Commitment Tracker")
 
-def get_percent_color(date_str):
+def get_neon_logic(date_str):
     plan = data["daily_plans"].get(date_str, [])
-    if not plan: return "#f9f9f9", 0, "#333" # Empty state
+    if not plan: return "rgba(255,255,255,0.05)", 0, "#888" # Grey/Empty
     
     total = len(plan)
     done = sum(1 for t in plan if t.get("done", False))
     percent = (done / total) * 100 if total > 0 else 0
     
-    # 5-Stage Neon Palette
-    if percent == 0: color = "#ff4b4b"       # Red
-    elif percent <= 33: color = "#ffa500"    # Orange
-    elif percent <= 66: color = "#ffeb3b"    # Yellow
-    elif percent < 100: color = "#00bcd4"    # Soft Cyan
-    else: color = "#00f3ff"                  # Vibrant Neon Blue
+    # 5-Stage Neon Spectrum
+    if percent == 0: color = "#FF3131"      # Neon Red
+    elif percent <= 25: color = "#FF5E00"   # Neon Orange
+    elif percent <= 50: color = "#FFFB00"   # Neon Yellow
+    elif percent <= 75: color = "#39FF14"   # Neon Green
+    else: color = "#00F3FF"                  # Neon Blue
     
-    text_color = "#000" if percent > 0 else "#666"
-    return color, percent, text_color
+    return color, percent, "#FFF"
 
-# GRID DISPLAY
+# GRID DISPLAY (10 cols to match original image)
 today = datetime.now().date()
-cols = st.columns(6) 
+cols = st.columns(10) 
 for i in range(60):
     day = today + timedelta(days=i)
     d_str = day.strftime("%Y-%m-%d")
-    color, percent, text_c = get_percent_color(d_str)
+    color, percent, text_c = get_neon_logic(d_str)
     
-    with cols[i % 6]:
-        tile_style = f"""
-        background-color: {color}; 
-        border: 2px solid {'#00f3ff' if percent == 100 else '#eee'};
-        box-shadow: {'0 0 15px rgba(0, 243, 255, 0.4)' if percent == 100 else 'none'};
-        """
-        
-        st.markdown(f"""
-        <div style="{tile_style} padding: 15px; border-radius: 12px; text-align: center;">
-            <div style="font-size: 0.8em; color: {text_c};">{day.strftime('%a')}</div>
-            <div style="font-size: 1.2em; font-weight: bold; color: {text_c};">{day.day}</div>
-            <div style="font-size: 0.7em; color: {text_c};">{day.strftime('%b')}</div>
+    with cols[i % 10]:
+        glow = f"box-shadow: 0 0 10px {color};" if percent > 0 else ""
+        tile_html = f"""
+        <div style="background: {color if percent > 0 else 'rgba(255,255,255,0.05)'}; 
+                    {glow} border-radius: 8px; padding: 10px 5px; text-align: center; margin-bottom: 5px;">
+            <div style="font-size: 0.7em; color: {text_c if percent > 0 else '#888'}; opacity: 0.8;">{day.strftime('%a')}</div>
+            <div style="font-size: 1.1em; font-weight: bold; color: {text_c if percent > 0 else '#888'};">{day.day}</div>
+            <div style="font-size: 0.6em; color: {text_c if percent > 0 else '#888'}; opacity: 0.8;">{day.strftime('%b')}</div>
         </div>
-        """, unsafe_allow_html=True)
-        
-        if st.button(f"Select {day.day}", key=f"btn_{d_str}", use_container_width=True):
+        """
+        st.markdown(tile_html, unsafe_allow_html=True)
+        if st.button("●", key=f"sel_{d_str}", use_container_width=True):
             st.session_state.selected_date = d_str
 
 st.divider()
@@ -130,14 +137,15 @@ if "selected_date" not in st.session_state:
     st.session_state.selected_date = today.strftime("%Y-%m-%d")
 
 sel_date = st.session_state.selected_date
-st.subheader(f"📅 Plan for {datetime.strptime(sel_date, '%Y-%m-%d').strftime('%A, %B %d')}")
+st.subheader(f"Tasks: {datetime.strptime(sel_date, '%Y-%m-%d').strftime('%b %d, %Y')}")
 
-c_list, c_add = st.columns([2, 1])
+c_list, c_add = st.columns([1.5, 1])
 
 with c_list:
+    st.markdown('<div class="task-container">', unsafe_allow_html=True)
     tasks = data["daily_plans"].get(sel_date, [])
     if not tasks:
-        st.info("Click 'Add Task' on the right to start this day.")
+        st.info("No plans yet.")
     else:
         for i, t in enumerate(tasks):
             col1, col2, col3 = st.columns([0.1, 0.8, 0.1])
@@ -146,17 +154,16 @@ with c_list:
                 t["done"] = done
                 save(); st.rerun()
             
-            # Neon blue strike-through for completed tasks
-            task_text = f"<span style='color: #00f3ff; text-decoration: line-through;'>{t['name']}</span>" if done else t['name']
-            col2.markdown(f"<div style='padding-top: 5px;'>{task_text}</div>", unsafe_allow_html=True)
-            
+            task_style = "color: #00F3FF; text-decoration: line-through; opacity: 0.6;" if done else "color: white;"
+            col2.markdown(f"<div style='padding-top: 5px; {task_style}'>{t['name']}</div>", unsafe_allow_html=True)
             if col3.button("🗑️", key=f"del_{sel_date}_{i}"):
                 tasks.pop(i); save(); st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
 with c_add:
-    st.write("### Quick Add")
-    new_t = st.text_input("New Task Description", key="input_new_task")
-    if st.button("Add to Today"):
+    st.markdown("### ➕ Add Task")
+    new_t = st.text_input("Description", key="new_task_field")
+    if st.button("Add to List"):
         if sel_date not in data["daily_plans"]: data["daily_plans"][sel_date] = []
         data["daily_plans"][sel_date].append({"name": new_t, "done": False})
         save(); st.rerun()
