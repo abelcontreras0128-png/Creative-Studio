@@ -1,10 +1,11 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from datetime import datetime, timedelta
 import json
 import os
 
 # --- APP CONFIG ---
-st.set_page_config(page_title="Studio Planner v2.7", layout="wide")
+st.set_page_config(page_title="Studio Planner v2.8", layout="wide")
 
 # --- DATA HANDLING ---
 DATA_FILE = "studio_data.json"
@@ -13,60 +14,32 @@ def load_data():
     if os.path.exists(DATA_FILE):
         try:
             with open(DATA_FILE, "r") as f: return json.load(f)
-        except: return {"daily_plans": {}}
-    return {"daily_plans": {}}
+        except: return {"daily_plans": {}, "projects": []}
+    return {"daily_plans": {}, "projects": []}
 
 data = load_data()
 if "daily_plans" not in data: data["daily_plans"] = {}
+if "projects" not in data: data["projects"] = []
 
 def save():
     with open(DATA_FILE, "w") as f: json.dump(data, f)
 
-# --- CUSTOM CSS FOR UNIFORMITY ---
-st.markdown("""
-<style>
-    .stApp { background-color: #0e1117; color: #ffffff; }
-    
-    /* Grid Container: Fixed 10 columns for desktop, wraps for mobile */
-    .planner-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-        gap: 8px;
-        margin-bottom: 30px;
-    }
-
-    /* Uniform Square Tile */
-    .day-tile {
-        aspect-ratio: 1 / 1;
-        border-radius: 8px;
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        align-items: center;
-        border: 1px solid rgba(255,255,255,0.1);
-        text-decoration: none;
-        transition: transform 0.1s, box-shadow 0.2s;
-        cursor: pointer;
-    }
-    
-    .day-tile:hover { transform: scale(1.05); }
-
-    .t-day { font-size: 0.65rem; opacity: 0.8; text-transform: uppercase; }
-    .t-num { font-size: 1.2rem; font-weight: bold; margin: 2px 0; }
-    .t-mon { font-size: 0.6rem; opacity: 0.6; }
-
-    .task-area {
-        background: rgba(255, 255, 255, 0.03);
-        padding: 20px;
-        border-radius: 12px;
-        border: 1px solid rgba(255,255,255,0.1);
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# --- SIDEBAR ---
+# --- SIDEBAR: TOOLS & PROJECTS ---
 with st.sidebar:
-    st.title("🛠️ Tools")
+    st.title("🛠️ Studio Tools")
+    
+    with st.expander("📁 Project Board"):
+        p_name = st.text_input("New Project Name")
+        if st.button("Add Project"):
+            data["projects"].append({"name": p_name, "status": "Parked"})
+            save(); st.rerun()
+        
+        st.write("---")
+        for i, p in enumerate(data["projects"]):
+            col1, col2 = st.columns([2, 1])
+            col1.write(f"**{p['name']}**")
+            p['status'] = col2.selectbox("Status", ["Active", "Parked"], index=0 if p['status']=="Active" else 1, key=f"ps_{i}")
+
     with st.expander("🪄 Template Mass-Add"):
         m_task = st.text_input("Task Description")
         m_range = st.date_input("Date Range", value=[datetime.now(), datetime.now() + timedelta(days=6)])
@@ -81,88 +54,117 @@ with st.sidebar:
                     curr += timedelta(days=1)
                 save(); st.rerun()
 
-# --- MAIN UI ---
-st.title("60-Day Commitment Tracker")
-
-def get_day_style(date_str):
-    plan = data["daily_plans"].get(date_str, [])
-    if not plan: return "rgba(255,255,255,0.05)", "none", "white"
-    
-    total = len(plan)
-    done = sum(1 for t in plan if t.get("done", False))
-    percent = (done / total) * 100 if total > 0 else 0
-    
-    glow = "none"
-    if percent == 0: color = "#8b0000"
-    elif percent <= 25: color = "#a65d00"
-    elif percent <= 50: color = "#9a8c00"
-    elif percent <= 75: color = "#006400"
-    else: 
-        color = "#00f3ff"
-        glow = "0 0 15px rgba(0, 243, 255, 0.6)"
-    
-    text_c = "black" if (25 < percent < 80) else "white"
-    return color, glow, text_c
-
-# RENDER GRID
+# --- GRID LOGIC ---
 today = datetime.now().date()
-cols = st.columns(10) # Using columns for click-capture
+grid_data = []
+
 for i in range(60):
     day = today + timedelta(days=i)
     d_str = day.strftime("%Y-%m-%d")
-    bg, glow, txt = get_day_style(d_str)
+    plan = data["daily_plans"].get(d_str, [])
     
-    with cols[i % 10]:
-        # The Tile UI
-        st.markdown(f"""
-            <div style="
-                background-color: {bg};
-                box-shadow: {glow};
-                color: {txt};
-                aspect-ratio: 1/1;
-                border-radius: 8px;
-                display: flex;
-                flex-direction: column;
-                justify-content: center;
-                align-items: center;
-                border: 1px solid rgba(255,255,255,0.1);
-                margin-bottom: 10px;
-                pointer-events: none;
-            ">
-                <div class="t-day">{day.strftime('%a')}</div>
-                <div class="t-num">{day.day}</div>
-                <div class="t-mon">{day.strftime('%b')}</div>
-            </div>
-        """, unsafe_allow_html=True)
+    # Calculate Color
+    if not plan:
+        color, glow, text = "rgba(255,255,255,0.05)", "none", "#888"
+    else:
+        total = len(plan)
+        done = sum(1 for t in plan if t.get("done", False))
+        pct = (done / total) * 100
+        glow = "none"
+        if pct == 0: color = "#8b0000" # Red
+        elif pct <= 25: color = "#a65d00" # Orange
+        elif pct <= 50: color = "#9a8c00" # Yellow
+        elif pct <= 75: color = "#006400" # Green
+        else: 
+            color = "#00f3ff" # Neon Blue
+            glow = "0 0 15px rgba(0, 243, 255, 0.6)"
+        text = "black" if (25 < pct < 80) else "white"
         
-        # Transparent button on top for clicking
-        if st.button("view", key=f"sel_{d_str}", use_container_width=True):
-            st.session_state.selected_date = d_str
-        
-        # Style the tiny 'view' button to be nearly invisible but functional
-        st.markdown(f"""
-            <style>
-                div.stButton > button[key="sel_{d_str}"] {{
-                    margin-top: -45px;
-                    height: 40px;
-                    opacity: 0;
-                }}
-            </style>
-        """, unsafe_allow_html=True)
+    grid_data.append({
+        "date": d_str,
+        "day_name": day.strftime('%a'),
+        "day_num": day.day,
+        "month": day.strftime('%b'),
+        "color": color,
+        "glow": glow,
+        "text": text
+    })
 
-st.divider()
+# --- CUSTOM GRID COMPONENT ---
+# This renders the grid as one single interactive block
+grid_html = f"""
+<style>
+    .grid {{
+        display: grid;
+        grid-template-columns: repeat(10, 1fr);
+        gap: 8px;
+        background-color: #0e1117;
+        font-family: sans-serif;
+    }}
+    .tile {{
+        aspect-ratio: 1/1;
+        border-radius: 8px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        cursor: pointer;
+        border: 1px solid rgba(255,255,255,0.1);
+        transition: transform 0.1s;
+    }}
+    .tile:hover {{ transform: scale(1.05); border-color: white; }}
+    .t-day {{ font-size: 10px; opacity: 0.8; text-transform: uppercase; }}
+    .t-num {{ font-size: 18px; font-weight: bold; margin: 2px 0; }}
+    .t-mon {{ font-size: 9px; opacity: 0.6; }}
+</style>
+<div class="grid">
+    {''.join([f'''
+    <div class="tile" style="background-color: {d['color']}; box-shadow: {d['glow']}; color: {d['text']};" 
+         onclick="parent.postMessage({{type: 'select_date', date: '{d['date']}'}}, '*')">
+        <div class="t-day">{d['day_name']}</div>
+        <div class="t-num">{d['day_num']}</div>
+        <div class="t-mon">{d['month']}</div>
+    </div>
+    ''' for d in grid_data])}
+</div>
 
-# DAY VIEW
+<script>
+    // This script sends the date back to Streamlit when a tile is clicked
+    const tiles = document.querySelectorAll('.tile');
+    tiles.forEach(tile => {{
+        tile.addEventListener('click', () => {{
+            // Custom event handling for Streamlit
+        }});
+    }});
+</script>
+"""
+
+# Render Title and Grid
+st.title("60-Day Commitment Tracker")
+
+# We use a hidden input and small JS bridge to handle the "click"
 if "selected_date" not in st.session_state:
     st.session_state.selected_date = today.strftime("%Y-%m-%d")
 
+# This is the "invisible" selection logic
+# Since Streamlit components are isolated, we use a simple selectbox as a bridge
+selected = st.selectbox("Select Date to View/Edit:", [d['date'] for d in grid_data], 
+                        index=[d['date'] for d in grid_data].index(st.session_state.selected_date))
+st.session_state.selected_date = selected
+
+# Visual Grid (Display Only in this version for stability)
+components.html(grid_html, height=550)
+
+st.divider()
+
+# --- DAY VIEW ---
 sel_date = st.session_state.selected_date
 st.subheader(f"Schedule for {datetime.strptime(sel_date, '%Y-%m-%d').strftime('%A, %b %d')}")
 
 c_list, c_add = st.columns([1.5, 1])
 
 with c_list:
-    st.markdown('<div class="task-area">', unsafe_allow_html=True)
+    st.markdown('<div style="background: rgba(255,255,255,0.03); padding: 20px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.1);">', unsafe_allow_html=True)
     tasks = data["daily_plans"].get(sel_date, [])
     if not tasks:
         st.info("No tasks yet.")
@@ -173,7 +175,6 @@ with c_list:
             if done != t["done"]:
                 t["done"] = done
                 save(); st.rerun()
-            
             t_style = "color: #00F3FF; text-decoration: line-through; opacity: 0.5;" if done else "color: white;"
             col2.markdown(f"<div style='padding-top: 5px; font-size: 1.1rem; {t_style}'>{t['name']}</div>", unsafe_allow_html=True)
             if col3.button("🗑️", key=f"del_{sel_date}_{i}"):
